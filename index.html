@@ -103,13 +103,17 @@
       display: flex; align-items: center; justify-content: center;
       font-family: var(--font-body); font-size: 10px; color: #bbb; padding: 10px; text-align: center;
       position: relative; overflow: hidden;
+      /* box itself just fades between states — no movement/bounce here,
+         that's reserved for the stamp artwork only */
+      transition: border-color 0.4s ease, background-color 0.4s ease;
     }
-    .slot.filled { border: 2px solid var(--brand-primary); background: rgba(127, 179, 204, 0.08); }
+    .slot.filled { border: 2px solid var(--brand-primary); background-color: rgba(127, 179, 204, 0.08); }
 
     .slot .grey-img, .slot .color-img {
       position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px);
-      object-fit: contain; transition: opacity 0.4s ease;
+      object-fit: contain;
     }
+    .slot .grey-img { transition: opacity 0.35s ease; }
     .slot .color-img { opacity: 0; }
     .slot.filled .grey-img { opacity: 0; }
     .slot.filled .color-img { opacity: 1; }
@@ -131,17 +135,22 @@
     .slot.next-up .not-collected-overlay { display: flex; }
     @keyframes blinkText { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-    /* ---- collected reveal: a literal "stamping down" motion — drops
-       in from above and lands with a quick squash, no rotation ---- */
-    .slot.just-filled { animation: slotReveal 0.6s cubic-bezier(.34,1.56,.64,1) forwards; }
-    @keyframes slotReveal {
-      0% { transform: translateY(-50px) scale(1.08); opacity: 0; }
-      55% { transform: translateY(0) scale(1.05); opacity: 1; }
-      75% { transform: translateY(3px) scale(0.95); }
-      100% { transform: translateY(0) scale(1); opacity: 1; }
+    /* ---- collected reveal: the BOX doesn't move at all — only the
+       colour artwork does. It starts large + invisible (as if held up
+       above the grey outline), then slams down: shrinking fast to
+       slightly under full size (the "impact"), before a small bounce
+       settle back to 1. Grey artwork just fades out underneath it. ---- */
+    .slot.just-filled .grey-img { transition: opacity 0.4s ease; }
+    .slot.just-filled .color-img {
+      transform-origin: center;
+      animation: stampImpact 0.5s forwards;
     }
-    .slot.just-filled .grey-img { transition: opacity 0.3s ease; transition-delay: 0.28s; }
-    .slot.just-filled .color-img { transition: opacity 0.35s ease; transition-delay: 0.32s; }
+    @keyframes stampImpact {
+      0% { transform: scale(1.7); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .75, 0); }
+      55% { transform: scale(0.92); opacity: 1; animation-timing-function: cubic-bezier(.34, 1.56, .64, 1); }
+      78% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
 
     .slot .check-badge {
       position: absolute; bottom: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%;
@@ -207,7 +216,14 @@
       }
       function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
 
-      if (isReset) localStorage.removeItem(STORAGE_KEY);
+      if (isReset) {
+        localStorage.removeItem(STORAGE_KEY);
+        // Strip ?reset=1 from the address bar once we've acted on it.
+        // Without this, the URL keeps the reset flag forever, so any
+        // later refresh on this same page (not just the NFC tag) wipes
+        // the passport again — stuck at 0 stamps, nothing ever animates.
+        history.replaceState(null, '', window.location.pathname);
+      }
       let state = loadState();
 
       state.finaleCount += 1;
@@ -262,16 +278,34 @@
       }
 
       const scanningEl = document.getElementById('scanning');
+      const SCAN_DURATION = 1400;
+      const OVERLAY_FADE_MS = 300; // must match .scanning's transition-duration in CSS
       scanningEl.classList.add('active');
       setTimeout(() => {
         scanningEl.classList.remove('active');
-        // fire the stamping-down animation now, right as the scanning
-        // screen clears — not earlier, so it's actually visible
-        if (justFilledEl) {
-          justFilledEl.classList.add('filled');
-          justFilledEl.classList.add('just-filled');
-        }
-      }, 1400);
+        // NOTE: .scanning fades out over OVERLAY_FADE_MS rather than
+        // disappearing instantly. Previously the stamp reveal classes
+        // were added in this same tick, so the drop + crossfade
+        // animation played out mostly hidden underneath the
+        // still-fading overlay, and looked like nothing happened.
+        // Waiting for the fade to finish first means the stamping
+        // animation plays on a fully clear page and is actually seen.
+        setTimeout(() => {
+          if (justFilledEl) {
+            justFilledEl.classList.add('filled');
+            justFilledEl.classList.add('just-filled');
+          }
+        }, OVERLAY_FADE_MS);
+      }, SCAN_DURATION);
+
+      // Guard against mobile browsers restoring this page from
+      // back/forward cache on a repeat NFC tap (same URL opened again)
+      // instead of doing a fresh load. If that happens the whole script
+      // above never re-runs, so nothing increments or animates. Force
+      // a real reload in that case.
+      window.addEventListener('pageshow', (e) => {
+        if (e.persisted) window.location.reload();
+      });
 
       document.getElementById('resetLink').addEventListener('click', (e) => {
         e.preventDefault();
