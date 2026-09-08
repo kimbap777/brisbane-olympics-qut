@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stamp Passport</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"> -->
+
+  <style>
+    @font-face {
+      font-family: "Clash Display";
+      src: url("./fonts/ClashDisplay-Medium.otf") format("opentype");
+      font-weight: 500;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: "Satoshi";
+      src: url("./fonts/Satoshi-Light.otf") format("opentype");
+      font-weight: 300;
+      font-style: normal;
+    }
+    /* NOTE: changed format("otf") to format("opentype") above — "otf"
+       isn't a format string browsers recognize; "opentype" is the
+       correct keyword for .otf files. With "otf", some browsers would
+       silently skip loading the file and fall back to default
+       sans-serif, which was likely why the custom fonts weren't
+       showing even though the files themselves were fine. */
+
+    :root {
+      --total-stations: 8;
+      --total-bonus-slots: 5;
+      --brand-primary: #2f6f8f;
+      --brand-accent: #7fb3cc;
+      --brand-success: #2f7a52;
+      --ink: #1a1c22;
+      --paper: #f4f2ee;
+      --muted: #9a9a9a;
+
+      --font-header: "Clash Display", sans-serif;
+      --font-body: "Satoshi", sans-serif;
+    }
+
+    * { box-sizing: border-box }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--paper);
+      background-image: linear-gradient(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.85)), url('./images/Background.png');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      font-family: var(--font-body);
+      color: var(--ink);
+      display: flex;
+      justify-content: center;
+    }
+
+    .page { max-width: 420px; width: 100%; padding: 32px 20px 60px; text-align: center; }
+
+    @media (max-width:360px) {
+      .page { padding: 22px 14px 44px; }
+      .grid { gap: 10px; }
+    }
+
+    .scanning {
+      position: fixed; inset: 0; background: var(--paper);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 20;
+    }
+    .scanning.active { opacity: 1; pointer-events: auto; }
+    .scanning-text { font-size: 17px; color: #555; margin-bottom: 28px; }
+    .pulse-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--brand-accent); animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.4); opacity: 1; } }
+
+    h1 { font-family: var(--font-header); font-weight: 500; font-size: 30px; margin: 0 0 8px; line-height: 1.2; }
+    .subtitle { font-family: var(--font-body); font-weight: 300; font-size: 15px; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 8px; }
+
+    .prompt-banner {
+      background: rgba(127, 179, 204, 0.12); border: 1px solid var(--brand-accent);
+      color: var(--brand-primary); font-family: var(--font-body); font-size: clamp(12px, 3.2vw, 13px); font-weight: 600;
+      border-radius: 12px; padding: 12px 16px; margin: 20px 0;
+      opacity: 0; transform: translateY(-6px);
+      animation: promptIn 0.4s ease forwards; animation-delay: 1.1s;
+    }
+    @keyframes promptIn { to { opacity: 1; transform: translateY(0); } }
+
+    /* ---- FIX: grid -> flexbox so all 5 slots share one sizing rule.
+       The old CSS Grid version gave the 5th slot a different sizing
+       path (grid-column span + max-width), which is what caused it to
+       render smaller and, on some phones, collapse to ~0 and vanish.
+       Flexbox with justify-content:center naturally centers a lone
+       last item on its own row without a special case. ---- */
+    .grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 24px; }
+
+    .slot {
+      width: calc(50% - 8px); aspect-ratio: 1; border-radius: 16px; border: 2px dashed #ccc;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-body); font-size: 10px; color: #bbb; padding: 10px; text-align: center;
+      position: relative; overflow: hidden;
+      /* box itself just fades between states — no movement/bounce here,
+         that's reserved for the stamp artwork only */
+      transition: border-color 0.4s ease, background-color 0.4s ease;
+    }
+    .slot.filled { border: 2px solid var(--brand-primary); background-color: rgba(127, 179, 204, 0.08); }
+
+    .slot .grey-img, .slot .color-img {
+      position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px);
+      object-fit: contain;
+    }
+    .slot .grey-img { transition: opacity 0.35s ease; }
+    .slot .color-img { opacity: 0; }
+    .slot.filled .grey-img { opacity: 0; }
+    .slot.filled .color-img { opacity: 1; }
+    .slot .label { position: relative; z-index: 1; pointer-events: none; }
+    .slot.filled .label { display: none; }
+
+    /* ---- "not yet collected" — temporary blinking overlay on only
+       the ONE next slot to collect, instead of a permanent label
+       sitting behind the artwork on every uncollected slot ---- */
+    .slot .not-collected-overlay {
+      position: absolute; inset: 0; z-index: 2;
+      background: rgba(255, 255, 255, 0.78);
+      display: none; align-items: center; justify-content: center;
+      font-family: var(--font-body); font-weight: 700; font-size: 11px;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--brand-primary);
+      text-align: center; padding: 10px; line-height: 1.5;
+      animation: blinkText 1.3s ease-in-out infinite;
+    }
+    .slot.next-up .not-collected-overlay { display: flex; }
+    @keyframes blinkText { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ---- collected reveal: the BOX doesn't move at all — only the
+       colour artwork does. It starts large + invisible (as if held up
+       above the grey outline), then slams down: shrinking fast to
+       slightly under full size (the "impact"), before a small bounce
+       settle back to 1. Grey artwork just fades out underneath it. ---- */
+    .slot.just-filled .grey-img { transition: opacity 0.4s ease; }
+    .slot.just-filled .color-img {
+      transform-origin: center;
+      animation: stampImpact 0.5s forwards;
+    }
+    @keyframes stampImpact {
+      0% { transform: scale(1.7); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .75, 0); }
+      55% { transform: scale(0.92); opacity: 1; animation-timing-function: cubic-bezier(.34, 1.56, .64, 1); }
+      78% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .slot .check-badge {
+      position: absolute; bottom: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%;
+      background: var(--brand-success); color: #fff; z-index: 3;
+      display: flex; align-items: center; justify-content: center; font-size: 13px;
+      opacity: 0; transform: scale(0.4);
+    }
+    .slot.just-filled .check-badge { animation: checkPop 0.35s cubic-bezier(.2, 1.3, .4, 1) forwards; animation-delay: 0.5s; }
+    @keyframes checkPop { to { opacity: 1; transform: scale(1); } }
+
+    .congrats {
+      margin-top: 26px; padding: 22px 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(127, 179, 204, 0.15), rgba(47, 122, 82, 0.12));
+      border: 1.5px solid var(--brand-success);
+      opacity: 0; transform: scale(0.94);
+      animation: congratsIn 0.5s cubic-bezier(.2, 1.3, .4, 1) forwards; animation-delay: 0.3s;
+    }
+    @keyframes congratsIn { to { opacity: 1; transform: scale(1); } }
+    .congrats h2 { font-family: var(--font-header); color: var(--brand-success); margin: 0 0 6px; font-size: clamp(17px, 5vw, 20px); }
+    .congrats p { font-family: var(--font-body); font-size: clamp(12px, 3.2vw, 13px); color: #555; margin: 0; }
+
+    .brand-footer { font-family: var(--font-body); margin-top: 36px; font-size: 11px; color: var(--muted); }
+    .reset-link { display: inline-block; margin-top: 20px; font-size: 10px; color: rgba(0, 0, 0, 0.25); text-decoration: none; }
+  </style>
+</head>
+
+<body>
+
+  <div class="scanning" id="scanning">
+    <div class="scanning-text">Scanning...</div>
+    <div class="pulse-dot"></div>
+  </div>
+
+  <div class="page">
+    <h1 id="headline">Welcome to your Passport!</h1>
+    <div class="subtitle" id="subtitle">Press the stand to collect!</div>
+
+    <div class="prompt-banner" id="promptBanner" style="display:none;"></div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="congrats" id="congrats" style="display:none;">
+      <h2>🎉 Passport complete!</h2>
+      <p>You collected every stamp. Thanks for completing the journey.</p>
+    </div>
+
+    <div class="brand-footer">Brisbane Olympics QUT!</div>
+    <a href="#" class="reset-link" id="resetLink">Reset this device's passport</a>
+  </div>
+
+  <script>
+    (function () {
+      const TOTAL_SLOTS = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--total-bonus-slots')) || 5;
+      const STORAGE_KEY = 'stamp_passport_v3';
+
+      const params = new URLSearchParams(window.location.search);
+      const isReset = params.get('reset') === '1';
+
+      function loadState() {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { finaleCount: 0 }; }
+        catch (e) { return { finaleCount: 0 }; }
+      }
+      function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+
+      if (isReset) {
+        localStorage.removeItem(STORAGE_KEY);
+        // Strip ?reset=1 from the address bar once we've acted on it.
+        // Without this, the URL keeps the reset flag forever, so any
+        // later refresh on this same page (not just the NFC tag) wipes
+        // the passport again — stuck at 0 stamps, nothing ever animates.
+        history.replaceState(null, '', window.location.pathname);
+      }
+      let state = loadState();
+
+      state.finaleCount += 1;
+      saveState(state);
+
+      const filledSlots = Math.max(0, Math.min(state.finaleCount - 1, TOTAL_SLOTS));
+      const justFilledIndex = filledSlots - 1;
+
+      const grid = document.getElementById('grid');
+      const headline = document.getElementById('headline');
+      const subtitle = document.getElementById('subtitle');
+      const promptBanner = document.getElementById('promptBanner');
+      const congrats = document.getElementById('congrats');
+      let justFilledEl = null; // the slot we'll animate in AFTER scanning finishes
+
+      for (let i = 0; i < TOTAL_SLOTS; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        const isFilled = i < filledSlots;
+        // NOTE: previously-collected slots get "filled" right away (no
+        // animation needed, they're just static). The slot collected
+        // THIS visit deliberately does NOT get "filled" yet — it stays
+        // looking uncollected until the scanning screen finishes, so
+        // the stamping animation has something to actually show.
+        if (isFilled && i !== justFilledIndex) slot.classList.add('filled');
+        if (i === justFilledIndex) justFilledEl = slot;
+        if (i === filledSlots && filledSlots < TOTAL_SLOTS && filledSlots > 0) slot.classList.add('next-up');
+
+        slot.innerHTML = `
+      <img class="grey-img" src="images/stamp-${i + 1}-grey.png" alt="">
+      <img class="color-img" src="images/stamp-${i + 1}-colour.png" alt="">
+      <div class="not-collected-overlay">NOT YET<br>COLLECTED</div>
+      <div class="check-badge">✓</div>
+      <span class="label">stamp-${i + 1}</span>
+    `;
+
+        grid.appendChild(slot);
+      }
+
+      if (filledSlots === 0) {
+        headline.textContent = 'Welcome to your Passport!';
+        subtitle.textContent = 'Press the stand to collect!';
+      } else if (filledSlots < TOTAL_SLOTS) {
+        headline.textContent = 'Stamp collected!';
+        subtitle.textContent = `${filledSlots} of ${TOTAL_SLOTS} stamps collected`;
+        promptBanner.style.display = 'block';
+        promptBanner.textContent = 'Press the stand again to collect another stamp!';
+      } else {
+        headline.textContent = 'Passport complete!';
+        subtitle.textContent = `${TOTAL_SLOTS} of ${TOTAL_SLOTS} stamps collected`;
+        congrats.style.display = 'block';
+      }
+
+      const scanningEl = document.getElementById('scanning');
+      const SCAN_DURATION = 1400;
+      const OVERLAY_FADE_MS = 300; // must match .scanning's transition-duration in CSS
+      scanningEl.classList.add('active');
+      setTimeout(() => {
+        scanningEl.classList.remove('active');
+        // NOTE: .scanning fades out over OVERLAY_FADE_MS rather than
+        // disappearing instantly. Previously the stamp reveal classes
+        // were added in this same tick, so the drop + crossfade
+        // animation played out mostly hidden underneath the
+        // still-fading overlay, and looked like nothing happened.
+        // Waiting for the fade to finish first means the stamping
+        // animation plays on a fully clear page and is actually seen.
+        setTimeout(() => {
+          if (justFilledEl) {
+            justFilledEl.classList.add('filled');
+            justFilledEl.classList.add('just-filled');
+          }
+        }, OVERLAY_FADE_MS);
+      }, SCAN_DURATION);
+
+      // Guard against mobile browsers restoring this page from
+      // back/forward cache on a repeat NFC tap (same URL opened again)
+      // instead of doing a fresh load. If that happens the whole script
+      // above never re-runs, so nothing increments or animates. Force
+      // a real reload in that case.
+      window.addEventListener('pageshow', (e) => {
+        if (e.persisted) window.location.reload();
+      });
+
+      document.getElementById('resetLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = window.location.pathname + '?reset=1';
+      });
+    })();
+  </script>
+
+</body>
+
+</html>
