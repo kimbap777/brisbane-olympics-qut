@@ -4,24 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Opening your passport…</title>
-  <!-- No-JS fallback: if scripting is somehow off, still land on the
-       passport (just without the anti-tab-reuse trick). -->
-  <meta http-equiv="refresh" content="0; url=index.html">
 </head>
 <body>
+  <noscript>
+    <p><a href="index.html">Tap here to continue</a></p>
+  </noscript>
   <script>
     // This page's ONLY job: bounce to a uniquely-parameterized URL.
     //
-    // The NFC tag always points at THIS file (redirect.html), and that
+    // NOTE: this used to ALSO have a <meta http-equiv="refresh"> tag as
+    // a no-JS fallback, alongside this script's location.replace(). On
+    // real devices those two redirects could race — the meta-refresh
+    // sending the tab to plain "index.html" WHILE this script also sent
+    // it to "index.html?t=...". When both fired, index.html's counting
+    // script ran twice (or more) for a single physical tap, which is
+    // why the very first tap could jump straight to stamp 2 already
+    // being animated instead of showing the blank welcome page. Using
+    // only the JS redirect (virtually all modern mobile browsers used
+    // for NFC taps support JS) removes that race entirely.
+    //
+    // The tag always points at THIS file (redirect.html), and that
     // never changes. But because we immediately replace() away from it,
     // no browser tab ever sits at "redirect.html" for more than an
     // instant — they all end up resting at "index.html?t=...somevalue".
-    //
-    // So next time the tag is tapped, the phone is asked to open
-    // "redirect.html" again — and no open tab currently matches that
-    // URL (they've all already moved on). That forces a genuine fresh
-    // navigation instead of Safari just refocusing an old tab with no
-    // reload, which is what was silently breaking the stamp animation.
+    // So next time the tag is tapped, no open tab matches "redirect.html"
+    // anymore, forcing a genuine fresh navigation instead of Safari
+    // just refocusing an old tab with no reload.
     var unique = Date.now() + '-' + Math.random().toString(36).slice(2);
     location.replace('index.html?t=' + unique);
   </script>
