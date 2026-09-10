@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opening your passport…</title>
+  <!-- No-JS fallback: if scripting is somehow off, still land on the
+       passport (just without the anti-tab-reuse trick). -->
+  <meta http-equiv="refresh" content="0; url=index.html">
+</head>
+<body>
+  <script>
+    // This page's ONLY job: bounce to a uniquely-parameterized URL.
+    //
+    // The NFC tag always points at THIS file (redirect.html), and that
+    // never changes. But because we immediately replace() away from it,
+    // no browser tab ever sits at "redirect.html" for more than an
+    // instant — they all end up resting at "index.html?t=...somevalue".
+    //
+    // So next time the tag is tapped, the phone is asked to open
+    // "redirect.html" again — and no open tab currently matches that
+    // URL (they've all already moved on). That forces a genuine fresh
+    // navigation instead of Safari just refocusing an old tab with no
+    // reload, which is what was silently breaking the stamp animation.
+    var unique = Date.now() + '-' + Math.random().toString(36).slice(2);
+    location.replace('index.html?t=' + unique);
+  </script>
+</body>
+</html>
